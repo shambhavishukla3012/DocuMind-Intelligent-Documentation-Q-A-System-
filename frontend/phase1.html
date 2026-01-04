@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phase 1 - Basic Chatbot</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span class="phase-badge">Phase 1</span>
+            <h1>Basic Chatbot</h1>
+            <p>Direct conversation with LLM without document retrieval</p>
+            <div class="nav-buttons">
+                <a href="index.html"><button class="secondary">Home</button></a>
+            </div>
+        </div>
+
+        <div class="status-container">
+            <div class="status-dot" id="statusDot"></div>
+            <span class="status-text" id="statusText">Checking connection...</span>
+        </div>
+
+        <div class="chat-container">
+            <div class="chat-messages" id="chatMessages">
+                <div class="message assistant">
+                    <div class="message-content">
+                        Hi, I'm a chatbot powered by Llama 3.2 3B. I can answer general questions based on my training data. Ask me anything.
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-container">
+                <input 
+                    type="text" 
+                    id="messageInput" 
+                    placeholder="Type your message..."
+                    onkeypress="handleKeyPress(event)"
+                >
+                <button onclick="sendMessage()" id="sendButton">Send</button>
+                <button onclick="clearChat()" class="secondary">Clear</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5000';
+        let isWaiting = false;
+
+        async function checkStatus() {
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+
+            try {
+                const response = await fetch(`${API_URL}/health`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    statusDot.classList.add('connected');
+                    statusText.textContent = 'Connected to backend';
+                } else {
+                    statusDot.classList.remove('connected');
+                    statusText.textContent = `Backend error: ${data.message}`;
+                }
+            } catch (error) {
+                statusDot.classList.remove('connected');
+                statusText.textContent = 'Cannot connect to backend';
+            }
+        }
+
+        function addMessage(content, isUser = false, isError = false) {
+            const chatMessages = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user' : 'assistant'} ${isError ? 'error' : ''}`;
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.textContent = content;
+            
+            messageDiv.appendChild(contentDiv);
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function showLoading() {
+            const chatMessages = document.getElementById('chatMessages');
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'message assistant';
+            loadingDiv.id = 'loadingIndicator';
+            
+            const loadingContent = document.createElement('div');
+            loadingContent.className = 'loading';
+            loadingContent.innerHTML = '<div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>';
+            
+            loadingDiv.appendChild(loadingContent);
+            chatMessages.appendChild(loadingDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function removeLoading() {
+            const loading = document.getElementById('loadingIndicator');
+            if (loading) loading.remove();
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message || isWaiting) return;
+            
+            isWaiting = true;
+            const sendButton = document.getElementById('sendButton');
+            sendButton.disabled = true;
+            
+            addMessage(message, true);
+            input.value = '';
+            showLoading();
+            
+            try {
+                const response = await fetch(`${API_URL}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                
+                const data = await response.json();
+                removeLoading();
+                
+                if (response.ok && data.response) {
+                    addMessage(data.response);
+                } else {
+                    addMessage(data.error || 'Unknown error occurred', false, true);
+                }
+            } catch (error) {
+                removeLoading();
+                addMessage(`Connection error: ${error.message}`, false, true);
+            } finally {
+                isWaiting = false;
+                sendButton.disabled = false;
+                input.focus();
+            }
+        }
+
+        async function clearChat() {
+            if (!confirm('Clear conversation history?')) return;
+            
+            try {
+                await fetch(`${API_URL}/clear`, { method: 'POST' });
+                
+                const chatMessages = document.getElementById('chatMessages');
+                chatMessages.innerHTML = `
+                    <div class="message assistant">
+                        <div class="message-content">
+                            Conversation cleared.
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                addMessage('Failed to clear chat history', false, true);
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        checkStatus();
+        setInterval(checkStatus, 10000);
+    </script>
+</body>
+</html>
